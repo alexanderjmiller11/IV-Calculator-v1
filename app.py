@@ -182,11 +182,60 @@ def fetch_market_and_vol_data(symbol: str, bypass_cache: bool = False):
         if not weekly_iv:
             weekly_iv = monthly_iv
 
-        vol_data = {
-            "Daily": {
-                "annual_iv": weekly_iv,
-                "period_iv": weekly_iv * math.sqrt(1 / 252),
-                "exp": weekly_exp,
-                "dte": exp_dtes.get(weekly_exp, 1),
-            },
-            "Weekly": {
+        w_dte = exp_dtes.get(weekly_exp, 7)
+        m_dte = exp_dtes.get(monthly_exp, 30)
+
+        vol_data = {}
+        vol_data["Daily"] = {
+            "annual_iv": weekly_iv,
+            "period_iv": weekly_iv * math.sqrt(1.0 / 252.0),
+            "exp": weekly_exp,
+            "dte": exp_dtes.get(weekly_exp, 1),
+        }
+        vol_data["Weekly"] = {
+            "annual_iv": weekly_iv,
+            "period_iv": weekly_iv * math.sqrt(float(w_dte) / 365.0),
+            "exp": weekly_exp,
+            "dte": w_dte,
+        }
+        vol_data["Monthly"] = {
+            "annual_iv": monthly_iv,
+            "period_iv": monthly_iv * math.sqrt(float(m_dte) / 365.0),
+            "exp": monthly_exp,
+            "dte": m_dte,
+        }
+
+        return live_price, baselines, vol_data, None
+    except Exception as e:
+        return None, None, None, f"Data fetch error: {str(e)}"
+
+
+# ---------------------------------------------------------
+# Plotly Bell Curve Generator
+# ---------------------------------------------------------
+def build_bell_curve(anchor_close: float, period_iv: float, live_price: float, title: str):
+    """Generates a normal distribution curve with ±1σ, ±2σ, ±3σ bands and live spot placement."""
+    sigma = anchor_close * period_iv
+    mu = anchor_close
+
+    span = 3.6 * sigma
+    x = np.linspace(mu - span, mu + span, 300)
+    y = (1.0 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+
+    fig = go.Figure()
+
+    # Probability Band Shading
+    fig.add_vrect(
+        x0=mu - sigma,
+        x1=mu + sigma,
+        fillcolor="rgba(34, 197, 94, 0.16)",
+        line_width=0,
+        annotation_text="1σ (68.3%)",
+        annotation_position="top left",
+        annotation_font_size=10,
+        annotation_font_color="#86efac",
+    )
+    fig.add_vrect(
+        x0=mu - 2 * sigma,
+        x1=mu - sigma,
+        fillcolor="rgba(234
