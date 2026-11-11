@@ -131,19 +131,22 @@ def fetch_market_and_vol_data(symbol: str, bypass_cache: bool = False):
             live_price = float(hist_daily["Close"].iloc[-1])
 
         # Baseline anchor closes
-        prev_day_close = (
-            float(hist_daily["Close"].iloc[-2]) if len(hist_daily) >= 2 else float(hist_daily["Close"].iloc[-1])
-        )
+        if len(hist_daily) >= 2:
+            prev_day_close = float(hist_daily["Close"].iloc[-2])
+        else:
+            prev_day_close = float(hist_daily["Close"].iloc[-1])
 
         hist_weekly = tk.history(period="6mo", interval="1wk")
-        prev_week_close = (
-            float(hist_weekly["Close"].iloc[-2]) if len(hist_weekly) >= 2 else prev_day_close
-        )
+        if len(hist_weekly) >= 2:
+            prev_week_close = float(hist_weekly["Close"].iloc[-2])
+        else:
+            prev_week_close = prev_day_close
 
         hist_monthly = tk.history(period="1y", interval="1mo")
-        prev_month_close = (
-            float(hist_monthly["Close"].iloc[-2]) if len(hist_monthly) >= 2 else prev_week_close
-        )
+        if len(hist_monthly) >= 2:
+            prev_month_close = float(hist_monthly["Close"].iloc[-2])
+        else:
+            prev_month_close = prev_week_close
 
         baselines = {
             "Daily": prev_day_close,
@@ -170,4 +173,20 @@ def fetch_market_and_vol_data(symbol: str, bypass_cache: bool = False):
         weekly_exp = min(exp_dtes.keys(), key=lambda x: abs(exp_dtes[x] - 7))
         monthly_exp = min(exp_dtes.keys(), key=lambda x: abs(exp_dtes[x] - 30))
 
-        weekly
+        weekly_iv = get_atm_iv_for_dte(tk.option_chain(weekly_exp), live_price)
+        monthly_iv = get_atm_iv_for_dte(tk.option_chain(monthly_exp), live_price)
+
+        if not monthly_iv:
+            log_rets = np.log(hist_daily["Close"] / hist_daily["Close"].shift(1))
+            monthly_iv = float(log_rets.std() * np.sqrt(252))
+        if not weekly_iv:
+            weekly_iv = monthly_iv
+
+        vol_data = {
+            "Daily": {
+                "annual_iv": weekly_iv,
+                "period_iv": weekly_iv * math.sqrt(1 / 252),
+                "exp": weekly_exp,
+                "dte": exp_dtes.get(weekly_exp, 1),
+            },
+            "Weekly": {
